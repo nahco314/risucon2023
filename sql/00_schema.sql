@@ -72,7 +72,7 @@ DROP TABLE IF EXISTS `subtask_scores_of_user`;
 CREATE TABLE `subtask_scores_of_user` (
     `user_id` INT NOT NULL,
     `subtask_id` INT NOT NULL,
-    `score` INT DEFAULT 0 NOT NULL,
+    `score` INT DEFAULT 0 NOT NULL
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `idx_subtask_scores_of_user` ON `subtask_scores_of_user` (`user_id`, `subtask_id`);
