@@ -60,5 +60,5 @@ CREATE TABLE `submissions` (
     `answer` VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
-DROP INDEX IF EXISTS `idx_submissions`;
+ALTER TABLE `submissions` DROP INDEX `idx_submissions`;
 CREATE INDEX `idx_submissions` ON `submissions` (`task_id`, `user_id`);
