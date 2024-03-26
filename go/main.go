@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"sync"
 
@@ -19,6 +20,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	echolog "github.com/labstack/gommon/log"
+	log2 "log"
+	_ "net/http/pprof"
 )
 
 const (
@@ -79,6 +82,12 @@ func initializeHandler(c echo.Context) error {
 }
 
 func main() {
+	runtime.SetBlockProfileRate(1)
+	runtime.SetMutexProfileFraction(1)
+	go func() {
+		log2.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
+
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(echolog.DEBUG)
@@ -115,7 +124,6 @@ func main() {
 
 	// 以上に当てはまらなければ index.html を返す
 	e.GET("/*", getIndexHandler)
-	
 
 	// DB接続
 	db, err := connectDB()
