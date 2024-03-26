@@ -493,7 +493,7 @@ func getTaskHandler(c echo.Context) error {
 
 			var subtask_scores []Res
 
-			if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT * FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil && err != sql.ErrNoRows {
+			if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil && err != sql.ErrNoRows {
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
 			}
 
@@ -502,7 +502,7 @@ func getTaskHandler(c echo.Context) error {
 			}
 
 			if team.Member1ID != nulluserid {
-				if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT * FROM subtask_scores_of_user WHERE user_id = ?", team.Member1ID); err != nil && err != sql.ErrNoRows {
+				if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member1ID); err != nil && err != sql.ErrNoRows {
 					return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
 				}
 
@@ -512,7 +512,7 @@ func getTaskHandler(c echo.Context) error {
 			}
 
 			if team.Member2ID != nulluserid {
-				if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT * FROM subtask_scores_of_user WHERE user_id = ?", team.Member2ID); err != nil && err != sql.ErrNoRows {
+				if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member2ID); err != nil && err != sql.ErrNoRows {
 					return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
 				}
 
