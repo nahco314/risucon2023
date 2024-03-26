@@ -379,6 +379,7 @@ func getStandingsHandler(c echo.Context) error {
 }
 
 type SubtaskDetail struct {
+	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	Statement   string `json:"statement"`
@@ -443,6 +444,7 @@ func getTaskHandler(c echo.Context) error {
 
 	for _, subtask := range subtasks {
 		subtaskdetail := SubtaskDetail{
+			ID:          subtask.ID,
 			Name:        subtask.Name,
 			DisplayName: subtask.DisplayName,
 			Statement:   subtask.Statement,
@@ -491,6 +493,11 @@ func getTaskHandler(c echo.Context) error {
 				Score     int `db:"score"`
 			}
 
+			reverse_map := map[int]int{}
+			for i, subtask := range res.Subtasks {
+				reverse_map[subtask.ID] = i
+			}
+
 			var subtask_scores []Res
 
 			if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil && err != sql.ErrNoRows {
@@ -498,7 +505,7 @@ func getTaskHandler(c echo.Context) error {
 			}
 
 			for _, subtask_score := range subtask_scores {
-				res.Subtasks[subtask_score.SubtaskID-1].Score = max(res.Subtasks[subtask_score.SubtaskID-1].Score, subtask_score.Score)
+				res.Subtasks[reverse_map[subtask_score.SubtaskID]].Score = max(res.Subtasks[reverse_map[subtask_score.SubtaskID]].Score, subtask_score.Score)
 			}
 
 			if team.Member1ID != nulluserid {
@@ -507,7 +514,7 @@ func getTaskHandler(c echo.Context) error {
 				}
 
 				for _, subtask_score := range subtask_scores {
-					res.Subtasks[subtask_score.SubtaskID-1].Score = max(res.Subtasks[subtask_score.SubtaskID-1].Score, subtask_score.Score)
+					res.Subtasks[reverse_map[subtask_score.SubtaskID]].Score = max(res.Subtasks[reverse_map[subtask_score.SubtaskID]].Score, subtask_score.Score)
 				}
 			}
 
@@ -517,7 +524,7 @@ func getTaskHandler(c echo.Context) error {
 				}
 
 				for _, subtask_score := range subtask_scores {
-					res.Subtasks[subtask_score.SubtaskID-1].Score = max(res.Subtasks[subtask_score.SubtaskID-1].Score, subtask_score.Score)
+					res.Subtasks[reverse_map[subtask_score.SubtaskID]].Score = max(res.Subtasks[reverse_map[subtask_score.SubtaskID]].Score, subtask_score.Score)
 				}
 			}
 
