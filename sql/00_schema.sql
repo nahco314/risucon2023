@@ -31,6 +31,8 @@ CREATE TABLE `tasks` (
     UNIQUE `uniq_task_name` (`name`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
+CREATE INDEX `idx_tasks` ON `tasks` (`name`);
+
 DROP TABLE IF EXISTS `subtasks`;
 CREATE TABLE `subtasks` (
     `id` INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
@@ -41,6 +43,8 @@ CREATE TABLE `subtasks` (
     UNIQUE `uniq_question` (`task_id`, `name`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
+CREATE INDEX `idx_subtasks` ON `subtasks` (`task_id`);
+
 DROP TABLE IF EXISTS `answers`;
 CREATE TABLE `answers` (
     `id` INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
@@ -50,6 +54,8 @@ CREATE TABLE `answers` (
     `score` INT NOT NULL,
     UNIQUE `uniq_answer` (`task_id`, `answer`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `idx_answers` ON `answers` (`task_id`);
 
 DROP TABLE IF EXISTS `submissions`;
 CREATE TABLE `submissions` (
