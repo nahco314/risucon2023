@@ -228,6 +228,27 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 		})
 	}
 
+	type Res struct {
+		UserID    int `db:"user_id"`
+		SubtaskID int `db:"subtask_id"`
+		Score     int `db:"score"`
+	}
+
+	scores := map[int](map[int]int){}
+
+	var subtask_scores []Res
+
+	if err := tx.SelectContext(ctx, &subtask_scores, "SELECT user_id, subtask_id, score FROM subtask_scores_of_user"); err != nil && err != sql.ErrNoRows {
+		return Standings{}, err
+	}
+
+	for _, subtask_score := range subtask_scores {
+		if _, ok := scores[subtask_score.UserID]; !ok {
+			scores[subtask_score.UserID] = map[int]int{}
+		}
+		scores[subtask_score.UserID][subtask_score.SubtaskID] = subtask_score.Score
+	}
+
 	teams := []Team{}
 	if err := tx.SelectContext(ctx, &teams, "SELECT * FROM teams ORDER BY name"); err != nil {
 		return Standings{}, err
@@ -299,28 +320,19 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 			for _, subtask := range subtasks {
 				subtaskscore := 0
 
-				leaderscore := 0
-				if err := tx.GetContext(ctx, &leaderscore, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.LeaderID); err != nil {
-					return Standings{}, err
-				}
+				leaderscore := scores[team.LeaderID][subtask.ID]
 				if subtaskscore < leaderscore {
 					subtaskscore = leaderscore
 				}
 
 				if team.Member1ID != nulluserid {
-					member1score := 0
-					if err := tx.GetContext(ctx, &member1score, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.Member1ID); err != nil {
-						return Standings{}, err
-					}
+					member1score := scores[team.Member1ID][subtask.ID]
 					if subtaskscore < member1score {
 						subtaskscore = member1score
 					}
 				}
 				if team.Member2ID != nulluserid {
-					member2score := 0
-					if err := tx.GetContext(ctx, &member2score, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.Member2ID); err != nil {
-						return Standings{}, err
-					}
+					member2score := scores[team.Member2ID][subtask.ID]
 					if subtaskscore < member2score {
 						subtaskscore = member2score
 					}
