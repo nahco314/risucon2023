@@ -258,7 +258,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 
 	var all_subs []Submit
 
-	if err := tx.SelectContext(ctx, &all_subs, "SELECT * FROM submissions"); err != nil && err != sql.ErrNoRows {
+	if err := tx.SelectContext(ctx, &all_subs, "SELECT task_id, user_id FROM submissions"); err != nil && err != sql.ErrNoRows {
 		return Standings{}, err
 	}
 
