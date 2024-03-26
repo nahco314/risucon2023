@@ -418,7 +418,7 @@ func getTaskHandler(c echo.Context) error {
 
 	subtasks := []Subtask{}
 
-	if cache_data, ok := subtaskcache.Load(task.ID) ; ok {
+	if cache_data, ok := subtaskcache.Load(task.ID); ok {
 		// データがキャッシュされているので、それを読み込む
 		subtasks = cache_data.([]Subtask)
 	}
@@ -446,6 +446,7 @@ func getTaskHandler(c echo.Context) error {
 			Name:        subtask.Name,
 			DisplayName: subtask.DisplayName,
 			Statement:   subtask.Statement,
+			Score:       0,
 		}
 		if err := tx.GetContext(c.Request().Context(), &subtaskdetail.MaxScore, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
@@ -485,35 +486,41 @@ func getTaskHandler(c echo.Context) error {
 				res.SubmissionCount += cnt
 			}
 
-			for i, subtask := range subtasks {
-				subtaskscore := 0
-				leaderscore := 0
-				if err := tx.GetContext(c.Request().Context(), &leaderscore, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.LeaderID); err != nil {
+			var subtask_scores []struct {
+				SubtaskID int `db:"subtask_id"`
+				Score     int `db:"score"`
+			}
+
+			if err := tx.GetContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
+			}
+
+			for _, subtask_score := range subtask_scores {
+				res.Subtasks[subtask_score.SubtaskID-1].Score = max(res.Subtasks[subtask_score.SubtaskID-1].Score, subtask_score.Score)
+			}
+
+			if team.Member1ID != nulluserid {
+				if err := tx.GetContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member1ID); err != nil {
 					return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
 				}
-				if subtaskscore < leaderscore {
-					subtaskscore = leaderscore
+
+				for _, subtask_score := range subtask_scores {
+					res.Subtasks[subtask_score.SubtaskID-1].Score = max(res.Subtasks[subtask_score.SubtaskID-1].Score, subtask_score.Score)
 				}
-				if team.Member1ID != nulluserid {
-					member1score := 0
-					if err := tx.GetContext(c.Request().Context(), &member1score, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.Member1ID); err != nil {
-						return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
-					}
-					if subtaskscore < member1score {
-						subtaskscore = member1score
-					}
+			}
+
+			if team.Member2ID != nulluserid {
+				if err := tx.GetContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member2ID); err != nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
 				}
-				if team.Member2ID != nulluserid {
-					member2score := 0
-					if err := tx.GetContext(c.Request().Context(), &member2score, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.Member2ID); err != nil {
-						return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
-					}
-					if subtaskscore < member2score {
-						subtaskscore = member2score
-					}
+
+				for _, subtask_score := range subtask_scores {
+					res.Subtasks[subtask_score.SubtaskID-1].Score = max(res.Subtasks[subtask_score.SubtaskID-1].Score, subtask_score.Score)
 				}
-				res.Subtasks[i].Score = subtaskscore
-				res.Score += subtaskscore
+			}
+
+			for _, subtask := range res.Subtasks {
+				res.Score += subtask.Score
 			}
 		} else if err != sql.ErrNoRows {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get team: "+err.Error())
@@ -648,6 +655,10 @@ func submitHandler(c echo.Context) error {
 				res.SubtaskName = subtask.Name
 				res.SubTaskDisplayName = subtask.DisplayName
 				res.SubTaskMaxScore = subtaskmaxscore
+
+				if _, err := tx.ExecContext(ctx, "INSERT INTO subtask_scores_of_user (user_id, subtask_id, score) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE score = GREATEST(score, ?)", user.ID, subtask.ID, answer.Score, answer.Score); err != nil {
+					return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert subtask score: "+err.Error())
+				}
 			}
 		}
 	}
