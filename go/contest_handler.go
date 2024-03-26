@@ -313,18 +313,23 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 			if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks WHERE task_id = ?", task.ID); err != nil {
 				return Standings{}, err
 			}
-			submissioncount := sub_cnts[task.ID][team.LeaderID]
+
+			tm, ok := sub_cnts[task.ID]
+			if !ok {
+				tm = map[int]int{}
+			}
+			submissioncount := tm[team.LeaderID]
 			if submissioncount > 0 {
 				taskscoringdata.HasSubmitted = true
 			}
 			if team.Member1ID != nulluserid {
-				cnt := sub_cnts[task.ID][team.Member1ID]
+				cnt := tm[team.Member1ID]
 				if cnt > 0 {
 					taskscoringdata.HasSubmitted = true
 				}
 			}
 			if team.Member2ID != nulluserid {
-				cnt := sub_cnts[task.ID][team.Member2ID]
+				cnt := tm[team.Member2ID]
 				if cnt > 0 {
 					taskscoringdata.HasSubmitted = true
 				}
