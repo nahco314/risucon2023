@@ -55,7 +55,7 @@ CREATE TABLE `answers` (
     UNIQUE `uniq_answer` (`task_id`, `answer`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
-CREATE INDEX `idx_answers` ON `answers` (`task_id`);
+CREATE INDEX `idx_answers` ON `answers` (`subtask_id`);
 
 DROP TABLE IF EXISTS `submissions`;
 CREATE TABLE `submissions` (
