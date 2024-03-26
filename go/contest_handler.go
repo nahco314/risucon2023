@@ -486,10 +486,12 @@ func getTaskHandler(c echo.Context) error {
 				res.SubmissionCount += cnt
 			}
 
-			var subtask_scores []struct {
+			type Res struct {
 				SubtaskID int `db:"subtask_id"`
 				Score     int `db:"score"`
 			}
+
+			var subtask_scores []Res
 
 			if err := tx.GetContext(c.Request().Context(), &subtask_scores, "SELECT * FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil && err != sql.ErrNoRows {
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
