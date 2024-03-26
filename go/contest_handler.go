@@ -249,6 +249,26 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 		scores[subtask_score.UserID][subtask_score.SubtaskID] = subtask_score.Score
 	}
 
+	type Submit struct {
+		TaskID int `db:"task_id"`
+		UserID int `db:"user_id"`
+	}
+
+	sub_cnts := map[int](map[int]int){}
+
+	var all_subs []Submit
+
+	if err := tx.SelectContext(ctx, &all_subs, "SELECT * FROM submissions"); err != nil && err != sql.ErrNoRows {
+		return Standings{}, err
+	}
+
+	for _, s := range all_subs {
+		if _, ok := sub_cnts[s.TaskID]; !ok {
+			sub_cnts[s.TaskID] = map[int]int{}
+		}
+		sub_cnts[s.TaskID][s.UserID]++
+	}
+
 	teams := []Team{}
 	if err := tx.SelectContext(ctx, &teams, "SELECT * FROM teams ORDER BY name"); err != nil {
 		return Standings{}, err
@@ -293,26 +313,19 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 			if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks WHERE task_id = ?", task.ID); err != nil {
 				return Standings{}, err
 			}
-			submissioncount := 0
-			if err := tx.GetContext(ctx, &submissioncount, "SELECT COUNT(*) FROM submissions WHERE task_id = ? AND user_id = ?", task.ID, team.LeaderID); err != nil {
-				return Standings{}, err
-			}
+			submissioncount := sub_cnts[task.ID][team.LeaderID]
 			if submissioncount > 0 {
 				taskscoringdata.HasSubmitted = true
 			}
 			if team.Member1ID != nulluserid {
-				if err := tx.GetContext(ctx, &submissioncount, "SELECT COUNT(*) FROM submissions WHERE task_id = ? AND user_id = ?", task.ID, team.Member1ID); err != nil {
-					return Standings{}, err
-				}
-				if submissioncount > 0 {
+				cnt := sub_cnts[task.ID][team.Member1ID]
+				if cnt > 0 {
 					taskscoringdata.HasSubmitted = true
 				}
 			}
 			if team.Member2ID != nulluserid {
-				if err := tx.GetContext(ctx, &submissioncount, "SELECT COUNT(*) FROM submissions WHERE task_id = ? AND user_id = ?", task.ID, team.Member2ID); err != nil {
-					return Standings{}, err
-				}
-				if submissioncount > 0 {
+				cnt := sub_cnts[task.ID][team.Member2ID]
+				if cnt > 0 {
 					taskscoringdata.HasSubmitted = true
 				}
 			}
