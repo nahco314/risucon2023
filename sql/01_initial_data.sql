@@ -741,4 +741,4 @@ INSERT INTO `subtask_scores_of_user` (`user_id`, `subtask_id`, `score`) VALUES
 (62, 1, 100),
 (51, 4, 100),
 (86, 10, 50),
-(37, 10, 50),
+(37, 10, 50);
