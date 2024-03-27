@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
@@ -256,18 +255,18 @@ type Standings struct {
 	StandingsData []TeamsStandings `json:"standings_data"`
 }
 
-func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
+func getstandings(ctx context.Context) (Standings, error) {
 	standings := Standings{}
 
 	tasks := []Task{}
-	if err := tx.SelectContext(ctx, &tasks, "SELECT * FROM tasks ORDER BY name"); err != nil {
+	if err := dbConn.SelectContext(ctx, &tasks, "SELECT * FROM tasks ORDER BY name"); err != nil {
 		return Standings{}, err
 	}
 
 	var all_answers []Answer
 	var subtask_maxscores map[int]int
 
-	if err := tx.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
+	if err := dbConn.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
 		return Standings{}, err
 	}
 
@@ -275,7 +274,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 
 	var subtasks []Subtask
 
-	if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
+	if err := dbConn.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
 		return Standings{}, err
 	}
 
@@ -319,7 +318,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 
 	var subtask_scores []Res
 
-	if err := tx.SelectContext(ctx, &subtask_scores, "SELECT user_id, subtask_id, score FROM subtask_scores_of_user"); err != nil && err != sql.ErrNoRows {
+	if err := dbConn.SelectContext(ctx, &subtask_scores, "SELECT user_id, subtask_id, score FROM subtask_scores_of_user"); err != nil && err != sql.ErrNoRows {
 		return Standings{}, err
 	}
 
@@ -339,7 +338,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 
 	var all_subs []Submit
 
-	if err := tx.SelectContext(ctx, &all_subs, "SELECT task_id, user_id FROM submissions"); err != nil && err != sql.ErrNoRows {
+	if err := dbConn.SelectContext(ctx, &all_subs, "SELECT task_id, user_id FROM submissions"); err != nil && err != sql.ErrNoRows {
 		return Standings{}, err
 	}
 
@@ -352,7 +351,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 
 	var user_result []User
 
-	if err := tx.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
+	if err := dbConn.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
 		return Standings{}, err
 	}
 
@@ -363,7 +362,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 	}
 
 	teams := []Team{}
-	if err := tx.SelectContext(ctx, &teams, "SELECT * FROM teams ORDER BY name"); err != nil {
+	if err := dbConn.SelectContext(ctx, &teams, "SELECT * FROM teams ORDER BY name"); err != nil {
 		return Standings{}, err
 	}
 	for _, team := range teams {
@@ -471,19 +470,9 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 func getStandingsHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	standings, err := getstandings(ctx, tx)
+	standings, err := getstandings(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get standings: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit transaction: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, standings)
