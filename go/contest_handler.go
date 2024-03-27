@@ -64,114 +64,145 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 	if err := tx.SelectContext(ctx, &tasks, "SELECT * FROM tasks ORDER BY name"); err != nil {
 		return []TaskAbstract{}, err
 	}
+
+	type Res struct {
+		UserID    int `db:"user_id"`
+		SubtaskID int `db:"subtask_id"`
+		Score     int `db:"score"`
+	}
+
+	scores := map[int](map[int]int){}
+
+	var subtask_scores []Res
+
+	if err := tx.SelectContext(ctx, &subtask_scores, "SELECT user_id, subtask_id, score FROM subtask_scores_of_user"); err != nil && err != sql.ErrNoRows {
+		return []TaskAbstract{}, err
+	}
+
+	for _, subtask_score := range subtask_scores {
+		if _, ok := scores[subtask_score.UserID]; !ok {
+			scores[subtask_score.UserID] = map[int]int{}
+		}
+		scores[subtask_score.UserID][subtask_score.SubtaskID] = subtask_score.Score
+	}
+
+	type Submit struct {
+		TaskID int `db:"task_id"`
+		UserID int `db:"user_id"`
+	}
+
+	sub_cnts := map[int](map[int]int){}
+
+	var all_subs []Submit
+
+	if err := tx.SelectContext(ctx, &all_subs, "SELECT task_id, user_id FROM submissions"); err != nil && err != sql.ErrNoRows {
+		return []TaskAbstract{}, err
+	}
+
+	for _, s := range all_subs {
+		if _, ok := sub_cnts[s.TaskID]; !ok {
+			sub_cnts[s.TaskID] = map[int]int{}
+		}
+		sub_cnts[s.TaskID][s.UserID]++
+	}
+
+	var subtasks []Subtask
+
+	if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
+		return []TaskAbstract{}, err
+	}
+
+	var subtask_per_task = map[int]([]Subtask){}
+
+	for _, subtask := range subtasks {
+		if _, ok := subtask_per_task[subtask.TaskID]; !ok {
+			subtask_per_task[subtask.TaskID] = []Subtask{}
+		}
+		subtask_per_task[subtask.TaskID] = append(subtask_per_task[subtask.TaskID], subtask)
+	}
+
+	var user_result []User
+
+	if err := tx.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
+		return []TaskAbstract{}, err
+	}
+
+	var users_map = map[int]User{}
+
+	for _, user := range user_result {
+		users_map[user.ID] = user
+	}
+
 	res := []TaskAbstract{}
-	for _, task := range tasks {
-		maxscore := 0
-		subtasks := []Subtask{}
-		if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks WHERE task_id = ?", task.ID); err != nil {
+
+	if err := verifyUserSession(c); err == nil {
+		sess, _ := session.Get(defaultSessionIDKey, c)
+		username, _ := sess.Values[defaultSessionUserNameKey].(string)
+		user := User{}
+		if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
 			return []TaskAbstract{}, err
 		}
-		for _, subtask := range subtasks {
-			maxscore_for_subtask := 0
-			if err := tx.GetContext(ctx, &maxscore_for_subtask, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
-				return []TaskAbstract{}, err
+		team := Team{}
+		err := tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
+		for _, task := range tasks {
+			maxscore := 0
+			subtasks := subtask_per_task[task.ID]
+			for _, subtask := range subtasks {
+				maxscore_for_subtask := 0
+				if err := tx.GetContext(ctx, &maxscore_for_subtask, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
+					return []TaskAbstract{}, err
+				}
+				maxscore += maxscore_for_subtask
 			}
-			maxscore += maxscore_for_subtask
-		}
-		submissioncount := 0
-		score := 0
-		if err := verifyUserSession(c); err == nil {
-			sess, _ := session.Get(defaultSessionIDKey, c)
-			username, _ := sess.Values[defaultSessionUserNameKey].(string)
-			user := User{}
-			if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
-				return []TaskAbstract{}, err
-			}
-			team := Team{}
-			err := tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
+			submissioncount := 0
+			score := 0
+
 			if err == nil {
-				err := tx.GetContext(c.Request().Context(), &submissioncount, "SELECT COUNT(*) FROM submissions WHERE task_id = ? AND user_id = ?", task.ID, team.LeaderID)
-				if err != nil {
-					return []TaskAbstract{}, err
-				}
+				submissioncount = sub_cnts[task.ID][team.LeaderID]
 				if team.Member1ID != nulluserid {
-					cnt := 0
-					err := tx.GetContext(c.Request().Context(), &cnt, "SELECT COUNT(*) FROM submissions WHERE task_id = ? AND user_id = ?", task.ID, team.Member1ID)
-					if err != nil {
-						return []TaskAbstract{}, err
-					}
+					cnt := sub_cnts[task.ID][team.Member1ID]
 					submissioncount += cnt
 				}
 				if team.Member2ID != nulluserid {
-					cnt := 0
-					err := tx.GetContext(c.Request().Context(), &cnt, "SELECT COUNT(*) FROM submissions WHERE task_id = ? AND user_id = ?", task.ID, team.Member2ID)
-					if err != nil {
-						return []TaskAbstract{}, err
-					}
+					cnt := sub_cnts[task.ID][team.Member2ID]
 					submissioncount += cnt
-				}
-
-				type Res struct {
-					SubtaskID int `db:"subtask_id"`
-					Score     int `db:"score"`
-				}
-
-				reverse_map := map[int]int{}
-				for i, subtask := range subtasks {
-					reverse_map[subtask.ID] = i
-				}
-
-				var subtask_scores []Res
-
-				if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil && err != sql.ErrNoRows {
-					return []TaskAbstract{}, err
-				}
-
-				var scores_of_subtask = map[int]int{}
-
-				for _, subtask_score := range subtask_scores {
-					if _, ok := scores_of_subtask[subtask_score.SubtaskID]; !ok {
-						scores_of_subtask[subtask_score.SubtaskID] = 0
-					}
-					scores_of_subtask[subtask_score.SubtaskID] = max(scores_of_subtask[subtask_score.SubtaskID], subtask_score.Score)
-				}
-
-				if team.Member1ID != nulluserid {
-					if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member1ID); err != nil && err != sql.ErrNoRows {
-						return []TaskAbstract{}, err
-					}
-
-					for _, subtask_score := range subtask_scores {
-						scores_of_subtask[subtask_score.SubtaskID] = max(scores_of_subtask[subtask_score.SubtaskID], subtask_score.Score)
-					}
-				}
-
-				if team.Member2ID != nulluserid {
-					if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member2ID); err != nil && err != sql.ErrNoRows {
-						return []TaskAbstract{}, err
-					}
-
-					for _, subtask_score := range subtask_scores {
-						scores_of_subtask[subtask_score.SubtaskID] = max(scores_of_subtask[subtask_score.SubtaskID], subtask_score.Score)
-					}
 				}
 
 				for _, subtask := range subtasks {
-					score_for_subtask := scores_of_subtask[subtask.ID]
+					sm, ok := scores[team.LeaderID]
+					if !ok {
+						sm = map[int]int{}
+					}
+					score_for_subtask := sm[subtask.ID]
+
+					if team.Member1ID != nulluserid {
+						member1score := scores[team.Member1ID][subtask.ID]
+						if score_for_subtask < member1score {
+							score_for_subtask = member1score
+						}
+					}
+					if team.Member2ID != nulluserid {
+						member2score := scores[team.Member2ID][subtask.ID]
+						if score_for_subtask < member2score {
+							score_for_subtask = member2score
+						}
+					}
+
 					score += score_for_subtask
 				}
 			} else if err != sql.ErrNoRows {
 				return []TaskAbstract{}, err
 			}
+
+			res = append(res, TaskAbstract{
+				Name:            task.Name,
+				DisplayName:     task.DisplayName,
+				MaxScore:        maxscore,
+				Score:           score,
+				SubmissionLimit: task.SubmissionLimit,
+				SubmissionCount: submissioncount,
+			})
 		}
-		res = append(res, TaskAbstract{
-			Name:            task.Name,
-			DisplayName:     task.DisplayName,
-			MaxScore:        maxscore,
-			Score:           score,
-			SubmissionLimit: task.SubmissionLimit,
-			SubmissionCount: submissioncount,
-		})
 	}
 
 	return res, nil
