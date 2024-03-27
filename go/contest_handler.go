@@ -135,6 +135,22 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 
 	res := []TaskAbstract{}
 
+	var all_answers []Answer
+	var subtask_maxscores map[int]int
+
+	if err := tx.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
+		return []TaskAbstract{}, err
+	}
+
+	subtask_maxscores = map[int]int{}
+
+	for _, answer := range all_answers {
+		if _, ok := subtask_maxscores[answer.SubtaskID]; !ok {
+			subtask_maxscores[answer.SubtaskID] = 0
+		}
+		subtask_maxscores[answer.SubtaskID] = max(subtask_maxscores[answer.SubtaskID], answer.Score)
+	}
+
 	if err := verifyUserSession(c); err == nil {
 		sess, _ := session.Get(defaultSessionIDKey, c)
 		username, _ := sess.Values[defaultSessionUserNameKey].(string)
@@ -148,10 +164,7 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 			maxscore := 0
 			subtasks := subtask_per_task[task.ID]
 			for _, subtask := range subtasks {
-				maxscore_for_subtask := 0
-				if err := tx.GetContext(ctx, &maxscore_for_subtask, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
-					return []TaskAbstract{}, err
-				}
+				maxscore_for_subtask := subtask_maxscores[subtask.ID]
 				maxscore += maxscore_for_subtask
 			}
 			submissioncount := 0
