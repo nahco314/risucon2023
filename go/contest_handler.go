@@ -151,69 +151,71 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 		subtask_maxscores[answer.SubtaskID] = max(subtask_maxscores[answer.SubtaskID], answer.Score)
 	}
 
-	sess, _ := session.Get(defaultSessionIDKey, c)
-	username, _ := sess.Values[defaultSessionUserNameKey].(string)
-	user := User{}
-	if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
-		return []TaskAbstract{}, err
-	}
-	team := Team{}
-	err := tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
-	for _, task := range tasks {
-		maxscore := 0
-		subtasks := subtask_per_task[task.ID]
-		for _, subtask := range subtasks {
-			maxscore_for_subtask := subtask_maxscores[subtask.ID]
-			maxscore += maxscore_for_subtask
-		}
-		submissioncount := 0
-		score := 0
-
-		if err == nil {
-			submissioncount = sub_cnts[task.ID][team.LeaderID]
-			if team.Member1ID != nulluserid {
-				cnt := sub_cnts[task.ID][team.Member1ID]
-				submissioncount += cnt
-			}
-			if team.Member2ID != nulluserid {
-				cnt := sub_cnts[task.ID][team.Member2ID]
-				submissioncount += cnt
-			}
-
-			for _, subtask := range subtasks {
-				sm, ok := scores[team.LeaderID]
-				if !ok {
-					sm = map[int]int{}
-				}
-				score_for_subtask := sm[subtask.ID]
-
-				if team.Member1ID != nulluserid {
-					member1score := scores[team.Member1ID][subtask.ID]
-					if score_for_subtask < member1score {
-						score_for_subtask = member1score
-					}
-				}
-				if team.Member2ID != nulluserid {
-					member2score := scores[team.Member2ID][subtask.ID]
-					if score_for_subtask < member2score {
-						score_for_subtask = member2score
-					}
-				}
-
-				score += score_for_subtask
-			}
-		} else if err != sql.ErrNoRows {
+	if err := verifyUserSession(c); err == nil {
+		sess, _ := session.Get(defaultSessionIDKey, c)
+		username, _ := sess.Values[defaultSessionUserNameKey].(string)
+		user := User{}
+		if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
 			return []TaskAbstract{}, err
 		}
+		team := Team{}
+		err := tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
+		for _, task := range tasks {
+			maxscore := 0
+			subtasks := subtask_per_task[task.ID]
+			for _, subtask := range subtasks {
+				maxscore_for_subtask := subtask_maxscores[subtask.ID]
+				maxscore += maxscore_for_subtask
+			}
+			submissioncount := 0
+			score := 0
 
-		res = append(res, TaskAbstract{
-			Name:            task.Name,
-			DisplayName:     task.DisplayName,
-			MaxScore:        maxscore,
-			Score:           score,
-			SubmissionLimit: task.SubmissionLimit,
-			SubmissionCount: submissioncount,
-		})
+			if err == nil {
+				submissioncount = sub_cnts[task.ID][team.LeaderID]
+				if team.Member1ID != nulluserid {
+					cnt := sub_cnts[task.ID][team.Member1ID]
+					submissioncount += cnt
+				}
+				if team.Member2ID != nulluserid {
+					cnt := sub_cnts[task.ID][team.Member2ID]
+					submissioncount += cnt
+				}
+
+				for _, subtask := range subtasks {
+					sm, ok := scores[team.LeaderID]
+					if !ok {
+						sm = map[int]int{}
+					}
+					score_for_subtask := sm[subtask.ID]
+
+					if team.Member1ID != nulluserid {
+						member1score := scores[team.Member1ID][subtask.ID]
+						if score_for_subtask < member1score {
+							score_for_subtask = member1score
+						}
+					}
+					if team.Member2ID != nulluserid {
+						member2score := scores[team.Member2ID][subtask.ID]
+						if score_for_subtask < member2score {
+							score_for_subtask = member2score
+						}
+					}
+
+					score += score_for_subtask
+				}
+			} else if err != sql.ErrNoRows {
+				return []TaskAbstract{}, err
+			}
+
+			res = append(res, TaskAbstract{
+				Name:            task.Name,
+				DisplayName:     task.DisplayName,
+				MaxScore:        maxscore,
+				Score:           score,
+				SubmissionLimit: task.SubmissionLimit,
+				SubmissionCount: submissioncount,
+			})
+		}
 	}
 
 	return res, nil
