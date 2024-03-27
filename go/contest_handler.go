@@ -273,17 +273,43 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 	if err := tx.SelectContext(ctx, &tasks, "SELECT * FROM tasks ORDER BY name"); err != nil {
 		return Standings{}, err
 	}
-	for _, task := range tasks {
-		subtasks := []Subtask{}
-		if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks WHERE task_id = ?", task.ID); err != nil {
-			return Standings{}, err
+
+	var all_answers []Answer
+	var subtask_maxscores map[int]int
+
+	if err := tx.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
+		return Standings{}, err
+	}
+
+	subtask_maxscores = map[int]int{}
+
+	var subtasks []Subtask
+
+	if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
+		return Standings{}, err
+	}
+
+	var subtask_per_task = map[int]([]Subtask){}
+
+	for _, subtask := range subtasks {
+		if _, ok := subtask_per_task[subtask.TaskID]; !ok {
+			subtask_per_task[subtask.TaskID] = []Subtask{}
 		}
+		subtask_per_task[subtask.TaskID] = append(subtask_per_task[subtask.TaskID], subtask)
+	}
+
+	for _, answer := range all_answers {
+		if _, ok := subtask_maxscores[answer.SubtaskID]; !ok {
+			subtask_maxscores[answer.SubtaskID] = 0
+		}
+		subtask_maxscores[answer.SubtaskID] = max(subtask_maxscores[answer.SubtaskID], answer.Score)
+	}
+
+	for _, task := range tasks {
+		subtasks := subtask_per_task[task.ID]
 		maxscore := 0
 		for _, subtask := range subtasks {
-			subtaskmaxscore := 0
-			if err := tx.GetContext(ctx, &subtaskmaxscore, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
-				return Standings{}, err
-			}
+			subtaskmaxscore := subtask_maxscores[subtask.ID]
 			maxscore += subtaskmaxscore
 		}
 		standings.TasksData = append(standings.TasksData, TaskAbstract{
@@ -332,21 +358,6 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 			sub_cnts[s.TaskID] = map[int]int{}
 		}
 		sub_cnts[s.TaskID][s.UserID]++
-	}
-
-	var subtasks []Subtask
-
-	if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
-		return Standings{}, err
-	}
-
-	var subtask_per_task = map[int]([]Subtask){}
-
-	for _, subtask := range subtasks {
-		if _, ok := subtask_per_task[subtask.TaskID]; !ok {
-			subtask_per_task[subtask.TaskID] = []Subtask{}
-		}
-		subtask_per_task[subtask.TaskID] = append(subtask_per_task[subtask.TaskID], subtask)
 	}
 
 	var user_result []User
