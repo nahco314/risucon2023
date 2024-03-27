@@ -269,6 +269,33 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 		sub_cnts[s.TaskID][s.UserID]++
 	}
 
+	var subtasks []Subtask
+
+	if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
+		return Standings{}, err
+	}
+
+	var subtask_per_task = map[int]([]Subtask){}
+
+	for _, subtask := range subtasks {
+		if _, ok := subtask_per_task[subtask.TaskID]; !ok {
+			subtask_per_task[subtask.TaskID] = []Subtask{}
+		}
+		subtask_per_task[subtask.TaskID] = append(subtask_per_task[subtask.TaskID], subtask)
+	}
+
+	var user_result []User
+
+	if err := tx.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
+		return Standings{}, err
+	}
+
+	var users_map = map[int]User{}
+
+	for _, user := range user_result {
+		users_map[user.ID] = user
+	}
+
 	teams := []Team{}
 	if err := tx.SelectContext(ctx, &teams, "SELECT * FROM teams ORDER BY name"); err != nil {
 		return Standings{}, err
@@ -279,25 +306,16 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 		teamstandings.TeamDisplayName = team.DisplayName
 		teamstandings.TotalScore = 0
 
-		leader := User{}
-		if err := tx.GetContext(ctx, &leader, "SELECT * FROM users WHERE id = ?", team.LeaderID); err != nil {
-			return Standings{}, err
-		}
+		leader := users_map[team.LeaderID]
 		teamstandings.LeaderName = leader.Name
 		teamstandings.LeaderDisplayName = leader.DisplayName
 		if team.Member1ID != nulluserid {
-			member1 := User{}
-			if err := tx.GetContext(ctx, &member1, "SELECT * FROM users WHERE id = ?", team.Member1ID); err != nil {
-				return Standings{}, err
-			}
+			member1 := users_map[team.Member1ID]
 			teamstandings.Member1Name = member1.Name
 			teamstandings.Member1DisplayName = member1.DisplayName
 		}
 		if team.Member2ID != nulluserid {
-			member2 := User{}
-			if err := tx.GetContext(ctx, &member2, "SELECT * FROM users WHERE id = ?", team.Member2ID); err != nil {
-				return Standings{}, err
-			}
+			member2 := users_map[team.Member2ID]
 			teamstandings.Member2Name = member2.Name
 			teamstandings.Member2DisplayName = member2.DisplayName
 		}
@@ -309,10 +327,7 @@ func getstandings(ctx context.Context, tx *sqlx.Tx) (Standings, error) {
 			taskscoringdata.HasSubmitted = false
 			taskscoringdata.Score = 0
 
-			subtasks := []Subtask{}
-			if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks WHERE task_id = ?", task.ID); err != nil {
-				return Standings{}, err
-			}
+			subtasks := subtask_per_task[task.ID]
 
 			tm, ok := sub_cnts[task.ID]
 			if !ok {
