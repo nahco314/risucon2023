@@ -1,12 +1,14 @@
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
     `id` INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
-    `name` VARCHAR(255) NOT NULL,
+    `name` VARCHAR(255) NOT NULL UNIQUE,
     `display_name` VARCHAR(255) NOT NULL,
     `description` TEXT NOT NULL,
     `passhash` VARCHAR(255) NOT NULL,
     UNIQUE `uniq_user_name` (`name`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `idx_users` ON `users` (`name`);
 
 DROP TABLE IF EXISTS `teams`;
 CREATE TABLE `teams` (
@@ -24,7 +26,7 @@ CREATE TABLE `teams` (
 DROP TABLE IF EXISTS `tasks`;
 CREATE TABLE `tasks` (
     `id` INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
-    `name` VARCHAR(255) NOT NULL,
+    `name` VARCHAR(255) NOT NULL UNIQUE,
     `display_name` VARCHAR(255) NOT NULL,
     `statement` TEXT NOT NULL,
     `submission_limit` INT NOT NULL,
@@ -66,7 +68,7 @@ CREATE TABLE `submissions` (
     `answer` VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
-CREATE INDEX `idx_submissions` ON `submissions` (`task_id`, `user_id`, `answer`);
+CREATE INDEX `idx_submissions` ON `submissions` (`task_id`, `user_id`, `submitted_at`);
 
 DROP TABLE IF EXISTS `subtask_scores_of_user`;
 CREATE TABLE `subtask_scores_of_user` (
