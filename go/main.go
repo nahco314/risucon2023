@@ -3,13 +3,14 @@ package main
 // sqlx については https://jmoiron.github.io/sqlx/ を参照
 
 import (
+	// "io/ioutil"
 	// "fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
+	// "runtime"
 	"strconv"
 	"sync"
 
@@ -18,9 +19,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	// "github.com/labstack/echo/v4/middleware"
 	echolog "github.com/labstack/gommon/log"
-	log2 "log"
+	// log2 "log"
 	_ "net/http/pprof"
 )
 
@@ -83,16 +84,17 @@ func initializeHandler(c echo.Context) error {
 }
 
 func main() {
-	runtime.SetBlockProfileRate(1)
-	runtime.SetMutexProfileFraction(1)
-	go func() {
-		log2.Println(http.ListenAndServe("0.0.0.0:6060", nil))
-	}()
+	// runtime.SetBlockProfileRate(1)
+	// runtime.SetMutexProfileFraction(1)
+	// go func() {
+	// 	log2.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	// }()
 
 	e := echo.New()
-	e.Debug = true
-	e.Logger.SetLevel(echolog.DEBUG)
-	e.Use(middleware.Logger())
+	e.Debug = false
+	// off log
+	e.Logger.SetLevel(echolog.OFF)
+	// e.Use(middleware.Logger())
 	cookiestore := sessions.NewCookieStore(secret)
 	e.Use(session.Middleware(cookiestore))
 
