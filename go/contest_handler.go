@@ -59,9 +59,9 @@ type TaskAbstract struct {
 	SubmissionCount int    `json:"submission_count,omitempty"`
 }
 
-func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskAbstract, error) {
+func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, error) {
 	tasks := []Task{}
-	if err := tx.SelectContext(ctx, &tasks, "SELECT * FROM tasks ORDER BY name"); err != nil {
+	if err := dbConn.SelectContext(ctx, &tasks, "SELECT * FROM tasks ORDER BY name"); err != nil {
 		return []TaskAbstract{}, err
 	}
 
@@ -75,7 +75,7 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 
 	var subtask_scores []Res
 
-	if err := tx.SelectContext(ctx, &subtask_scores, "SELECT user_id, subtask_id, score FROM subtask_scores_of_user"); err != nil && err != sql.ErrNoRows {
+	if err := dbConn.SelectContext(ctx, &subtask_scores, "SELECT user_id, subtask_id, score FROM subtask_scores_of_user"); err != nil && err != sql.ErrNoRows {
 		return []TaskAbstract{}, err
 	}
 
@@ -95,7 +95,7 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 
 	var all_subs []Submit
 
-	if err := tx.SelectContext(ctx, &all_subs, "SELECT task_id, user_id FROM submissions"); err != nil && err != sql.ErrNoRows {
+	if err := dbConn.SelectContext(ctx, &all_subs, "SELECT task_id, user_id FROM submissions"); err != nil && err != sql.ErrNoRows {
 		return []TaskAbstract{}, err
 	}
 
@@ -108,7 +108,7 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 
 	var subtasks []Subtask
 
-	if err := tx.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
+	if err := dbConn.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
 		return []TaskAbstract{}, err
 	}
 
@@ -123,7 +123,7 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 
 	var user_result []User
 
-	if err := tx.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
+	if err := dbConn.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
 		return []TaskAbstract{}, err
 	}
 
@@ -138,7 +138,7 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 	var all_answers []Answer
 	var subtask_maxscores map[int]int
 
-	if err := tx.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
+	if err := dbConn.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
 		return []TaskAbstract{}, err
 	}
 
@@ -155,11 +155,11 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 		sess, _ := session.Get(defaultSessionIDKey, c)
 		username, _ := sess.Values[defaultSessionUserNameKey].(string)
 		user := User{}
-		if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
+		if err := dbConn.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
 			return []TaskAbstract{}, err
 		}
 		team := Team{}
-		err := tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
+		err := dbConn.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
 		for _, task := range tasks {
 			maxscore := 0
 			subtasks := subtask_per_task[task.ID]
@@ -225,19 +225,9 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 func getTasksHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	taskabstarcts, err := gettaskabstarcts(ctx, tx, c)
+	taskabstarcts, err := gettaskabstarcts(ctx, c)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get taskabstarcts: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit transaction: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, taskabstarcts)
