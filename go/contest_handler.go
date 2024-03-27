@@ -82,7 +82,7 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 		if _, ok := scores[subtask_score.UserID]; !ok {
 			scores[subtask_score.UserID] = map[int]int{}
 		}
-		scores[subtask_score.UserID][subtask_score.SubtaskID] = subtask_score.Score
+		scores[subtask_score.UserID][subtask_score.SubtaskID] = max(scores[subtask_score.UserID][subtask_score.SubtaskID], subtask_score.Score)
 	}
 
 	type Submit struct {
@@ -807,27 +807,21 @@ func getSubmissionsHandler(c echo.Context) error {
 	sess, _ := session.Get(defaultSessionIDKey, c)
 	username, _ := sess.Values[defaultSessionUserNameKey].(string)
 
-	tx, err := dbConn.BeginTxx(c.Request().Context(), nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
 	user := User{}
-	if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
+	if err := dbConn.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
 	team := Team{}
 	if username != "admin" {
-		err = tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
+		err := dbConn.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE leader_id = ? OR member1_id = ? OR member2_id = ?", user.ID, user.ID, user.ID)
 		if err == sql.ErrNoRows {
 			return echo.NewHTTPError(http.StatusBadRequest, "you have not joined team")
 		} else if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get team: "+err.Error())
 		}
 	} else if c.QueryParam("team_name") != "" {
-		err = tx.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE name = ?", c.QueryParam("team_name"))
+		err := dbConn.GetContext(c.Request().Context(), &team, "SELECT * FROM teams WHERE name = ?", c.QueryParam("team_name"))
 		if err == sql.ErrNoRows {
 			return echo.NewHTTPError(http.StatusBadRequest, "team not found")
 		} else if err != nil {
@@ -840,7 +834,7 @@ func getSubmissionsHandler(c echo.Context) error {
 
 	if c.QueryParam("task_name") != "" {
 		task := Task{}
-		err = tx.GetContext(c.Request().Context(), &task, "SELECT * FROM tasks WHERE name = ?", c.QueryParam("task_name"))
+		err := dbConn.GetContext(c.Request().Context(), &task, "SELECT * FROM tasks WHERE name = ?", c.QueryParam("task_name"))
 		if err == sql.ErrNoRows {
 			return echo.NewHTTPError(http.StatusBadRequest, "task not found")
 		} else if err != nil {
@@ -851,7 +845,7 @@ func getSubmissionsHandler(c echo.Context) error {
 	}
 	if c.QueryParam("user_name") != "" {
 		user := User{}
-		err = tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", c.QueryParam("user_name"))
+		err := dbConn.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE name = ?", c.QueryParam("user_name"))
 		if err == sql.ErrNoRows {
 			return echo.NewHTTPError(http.StatusBadRequest, "user not found")
 		}
@@ -884,7 +878,7 @@ func getSubmissionsHandler(c echo.Context) error {
 	} else {
 		query = "SELECT * FROM submissions ORDER BY submitted_at DESC"
 	}
-	if err := tx.SelectContext(c.Request().Context(), &submissions, query, params...); err != nil {
+	if err := dbConn.SelectContext(c.Request().Context(), &submissions, query, params...); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get submissions: "+err.Error())
 	}
 
@@ -892,14 +886,14 @@ func getSubmissionsHandler(c echo.Context) error {
 	for _, submission := range submissions {
 		submissiondetail := SubmissionDetail{}
 		task := Task{}
-		if err := tx.GetContext(c.Request().Context(), &task, "SELECT * FROM tasks WHERE id = ?", submission.TaskID); err != nil {
+		if err := dbConn.GetContext(c.Request().Context(), &task, "SELECT * FROM tasks WHERE id = ?", submission.TaskID); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get task: "+err.Error())
 		}
 		submissiondetail.TaskName = task.Name
 		submissiondetail.TaskDisplayName = task.DisplayName
 
 		answer := Answer{}
-		err = tx.GetContext(c.Request().Context(), &answer, "SELECT * FROM answers WHERE task_id = ? AND answer = ?", task.ID, submission.Answer)
+		err := dbConn.GetContext(c.Request().Context(), &answer, "SELECT * FROM answers WHERE task_id = ? AND answer = ?", task.ID, submission.Answer)
 		if err == sql.ErrNoRows {
 			submissiondetail.SubTaskName = ""
 			submissiondetail.SubTaskDisplayName = ""
@@ -909,20 +903,20 @@ func getSubmissionsHandler(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get answer: "+err.Error())
 		} else {
 			subtask := Subtask{}
-			if err := tx.GetContext(c.Request().Context(), &subtask, "SELECT * FROM subtasks WHERE id = ?", answer.SubtaskID); err != nil {
+			if err := dbConn.GetContext(c.Request().Context(), &subtask, "SELECT * FROM subtasks WHERE id = ?", answer.SubtaskID); err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask: "+err.Error())
 			}
 			submissiondetail.SubTaskName = subtask.Name
 			submissiondetail.SubTaskDisplayName = subtask.DisplayName
 			submissiondetail.Score = answer.Score
 
-			if err := tx.GetContext(c.Request().Context(), &submissiondetail.SubTaskMaxScore, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
+			if err := dbConn.GetContext(c.Request().Context(), &submissiondetail.SubTaskMaxScore, "SELECT MAX(score) FROM answers WHERE subtask_id = ?", subtask.ID); err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to get subtask score: "+err.Error())
 			}
 		}
 
 		user := User{}
-		if err := tx.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE id = ?", submission.UserID); err != nil {
+		if err := dbConn.GetContext(c.Request().Context(), &user, "SELECT * FROM users WHERE id = ?", submission.UserID); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 		}
 		submissiondetail.UserName = user.Name
@@ -937,6 +931,7 @@ func getSubmissionsHandler(c echo.Context) error {
 
 	page := 1 // 1-idx
 	if c.QueryParam("page") != "" {
+		var err error
 		page, err = strconv.Atoi(c.QueryParam("page"))
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse page: "+err.Error())
@@ -958,10 +953,6 @@ func getSubmissionsHandler(c echo.Context) error {
 	res := submissionresponse{
 		Submissions:     submissiondata[start:end],
 		SubmissionCount: len(submissiondata),
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit transaction: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, res)
