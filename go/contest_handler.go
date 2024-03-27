@@ -253,34 +253,34 @@ func getstandings(ctx context.Context) (Standings, error) {
 		return Standings{}, err
 	}
 
+	var all_answers []Answer
+	var subtask_maxscores map[int]int
+
+	if err := dbConn.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
+		return Standings{}, err
+	}
+
+	subtask_maxscores = map[int]int{}
+
 	var subtasks []Subtask
 
 	if err := dbConn.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
 		return Standings{}, err
 	}
 
-	var user_result []User
-
-	if err := dbConn.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
-		return Standings{}, err
-	}
-
-	var all_answers []Answer
-	var subtask_maxscores []int
-
-	if err := dbConn.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
-		return Standings{}, err
-	}
-
-	subtask_maxscores = make([]int, len(subtasks)+1)
-
-	var subtask_per_task = make([]([]Subtask), len(tasks)+1)
+	var subtask_per_task = map[int]([]Subtask){}
 
 	for _, subtask := range subtasks {
+		if _, ok := subtask_per_task[subtask.TaskID]; !ok {
+			subtask_per_task[subtask.TaskID] = []Subtask{}
+		}
 		subtask_per_task[subtask.TaskID] = append(subtask_per_task[subtask.TaskID], subtask)
 	}
 
 	for _, answer := range all_answers {
+		if _, ok := subtask_maxscores[answer.SubtaskID]; !ok {
+			subtask_maxscores[answer.SubtaskID] = 0
+		}
 		subtask_maxscores[answer.SubtaskID] = max(subtask_maxscores[answer.SubtaskID], answer.Score)
 	}
 
@@ -304,10 +304,7 @@ func getstandings(ctx context.Context) (Standings, error) {
 		Score     int `db:"score"`
 	}
 
-	scores := make([][]int, len(user_result)+1)
-	for i := 0; i < len(user_result)+1; i++ {
-		scores[i] = make([]int, len(subtasks)+1)
-	}
+	scores := map[int](map[int]int){}
 
 	var subtask_scores []Res
 
@@ -316,6 +313,9 @@ func getstandings(ctx context.Context) (Standings, error) {
 	}
 
 	for _, subtask_score := range subtask_scores {
+		if _, ok := scores[subtask_score.UserID]; !ok {
+			scores[subtask_score.UserID] = map[int]int{}
+		}
 		scores[subtask_score.UserID][subtask_score.SubtaskID] = subtask_score.Score
 	}
 
@@ -324,10 +324,7 @@ func getstandings(ctx context.Context) (Standings, error) {
 		UserID int `db:"user_id"`
 	}
 
-	sub_cnts := make([][]int, len(tasks)+1)
-	for i := 0; i < len(tasks)+1; i++ {
-		sub_cnts[i] = make([]int, len(user_result)+1)
-	}
+	sub_cnts := map[int](map[int]int){}
 
 	var all_subs []Submit
 
@@ -336,10 +333,19 @@ func getstandings(ctx context.Context) (Standings, error) {
 	}
 
 	for _, s := range all_subs {
+		if _, ok := sub_cnts[s.TaskID]; !ok {
+			sub_cnts[s.TaskID] = map[int]int{}
+		}
 		sub_cnts[s.TaskID][s.UserID]++
 	}
 
-	var users_map = make([]User, len(user_result)+1)
+	var user_result []User
+
+	if err := dbConn.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
+		return Standings{}, err
+	}
+
+	var users_map = map[int]User{}
 
 	for _, user := range user_result {
 		users_map[user.ID] = user
@@ -378,18 +384,22 @@ func getstandings(ctx context.Context) (Standings, error) {
 
 			subtasks := subtask_per_task[task.ID]
 
-			submissioncount := sub_cnts[task.ID][team.LeaderID]
+			tm, ok := sub_cnts[task.ID]
+			if !ok {
+				tm = map[int]int{}
+			}
+			submissioncount := tm[team.LeaderID]
 			if submissioncount > 0 {
 				taskscoringdata.HasSubmitted = true
 			}
 			if team.Member1ID != nulluserid {
-				cnt := sub_cnts[task.ID][team.Member1ID]
+				cnt := tm[team.Member1ID]
 				if cnt > 0 {
 					taskscoringdata.HasSubmitted = true
 				}
 			}
 			if team.Member2ID != nulluserid {
-				cnt := sub_cnts[task.ID][team.Member2ID]
+				cnt := tm[team.Member2ID]
 				if cnt > 0 {
 					taskscoringdata.HasSubmitted = true
 				}
