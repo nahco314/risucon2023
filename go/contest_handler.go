@@ -70,22 +70,7 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 		Score     int `db:"score"`
 	}
 
-	var user_result []User
-
-	if err := dbConn.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
-		return []TaskAbstract{}, err
-	}
-
-	var subtasks []Subtask
-
-	if err := dbConn.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
-		return []TaskAbstract{}, err
-	}
-
-	scores := make([][]int, len(user_result)+1)
-	for i := 0; i < len(user_result)+1; i++ {
-		scores[i] = make([]int, len(subtasks)+1)
-	}
+	scores := map[int](map[int]int){}
 
 	var subtask_scores []Res
 
@@ -94,6 +79,9 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 	}
 
 	for _, subtask_score := range subtask_scores {
+		if _, ok := scores[subtask_score.UserID]; !ok {
+			scores[subtask_score.UserID] = map[int]int{}
+		}
 		scores[subtask_score.UserID][subtask_score.SubtaskID] = max(scores[subtask_score.UserID][subtask_score.SubtaskID], subtask_score.Score)
 	}
 
@@ -102,10 +90,7 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 		UserID int `db:"user_id"`
 	}
 
-	sub_cnts := make([][]int, len(tasks)+1)
-	for i := 0; i < len(tasks)+1; i++ {
-		sub_cnts[i] = make([]int, len(user_result)+1)
-	}
+	sub_cnts := map[int](map[int]int){}
 
 	var all_subs []Submit
 
@@ -114,16 +99,34 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 	}
 
 	for _, s := range all_subs {
+		if _, ok := sub_cnts[s.TaskID]; !ok {
+			sub_cnts[s.TaskID] = map[int]int{}
+		}
 		sub_cnts[s.TaskID][s.UserID]++
 	}
 
-	var subtask_per_task = make([][]Subtask, len(tasks)+1)
+	var subtasks []Subtask
+
+	if err := dbConn.SelectContext(ctx, &subtasks, "SELECT * FROM subtasks"); err != nil {
+		return []TaskAbstract{}, err
+	}
+
+	var subtask_per_task = map[int]([]Subtask){}
 
 	for _, subtask := range subtasks {
+		if _, ok := subtask_per_task[subtask.TaskID]; !ok {
+			subtask_per_task[subtask.TaskID] = []Subtask{}
+		}
 		subtask_per_task[subtask.TaskID] = append(subtask_per_task[subtask.TaskID], subtask)
 	}
 
-	var users_map = make([]User, len(user_result)+1)
+	var user_result []User
+
+	if err := dbConn.SelectContext(ctx, &user_result, "SELECT * FROM users"); err != nil {
+		return []TaskAbstract{}, err
+	}
+
+	var users_map = map[int]User{}
 
 	for _, user := range user_result {
 		users_map[user.ID] = user
@@ -132,15 +135,18 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 	res := []TaskAbstract{}
 
 	var all_answers []Answer
-	var subtask_maxscores []int
+	var subtask_maxscores map[int]int
 
 	if err := dbConn.SelectContext(ctx, &all_answers, "SELECT * FROM answers"); err != nil {
 		return []TaskAbstract{}, err
 	}
 
-	subtask_maxscores = make([]int, len(subtasks)+1)
+	subtask_maxscores = map[int]int{}
 
 	for _, answer := range all_answers {
+		if _, ok := subtask_maxscores[answer.SubtaskID]; !ok {
+			subtask_maxscores[answer.SubtaskID] = 0
+		}
 		subtask_maxscores[answer.SubtaskID] = max(subtask_maxscores[answer.SubtaskID], answer.Score)
 	}
 
@@ -175,7 +181,11 @@ func gettaskabstarcts(ctx context.Context, c echo.Context) ([]TaskAbstract, erro
 				}
 
 				for _, subtask := range subtasks {
-					score_for_subtask := scores[team.LeaderID][subtask.ID]
+					sm, ok := scores[team.LeaderID]
+					if !ok {
+						sm = map[int]int{}
+					}
+					score_for_subtask := sm[subtask.ID]
 
 					if team.Member1ID != nulluserid {
 						member1score := scores[team.Member1ID][subtask.ID]
