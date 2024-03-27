@@ -110,33 +110,54 @@ func gettaskabstarcts(ctx context.Context, tx *sqlx.Tx, c echo.Context) ([]TaskA
 					}
 					submissioncount += cnt
 				}
-				for _, subtask := range subtasks {
-					score_for_subtask := 0
-					leaderscore := 0
-					if err := tx.GetContext(ctx, &leaderscore, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.LeaderID); err != nil {
+
+				type Res struct {
+					SubtaskID int `db:"subtask_id"`
+					Score     int `db:"score"`
+				}
+
+				reverse_map := map[int]int{}
+				for i, subtask := range subtasks {
+					reverse_map[subtask.ID] = i
+				}
+
+				var subtask_scores []Res
+
+				if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.LeaderID); err != nil && err != sql.ErrNoRows {
+					return []TaskAbstract{}, err
+				}
+
+				var scores_of_subtask = map[int]int{}
+
+				for _, subtask_score := range subtask_scores {
+					if _, ok := scores_of_subtask[subtask_score.SubtaskID]; !ok {
+						scores_of_subtask[subtask_score.SubtaskID] = 0
+					}
+					scores_of_subtask[subtask_score.SubtaskID] = max(scores_of_subtask[subtask_score.SubtaskID], subtask_score.Score)
+				}
+
+				if team.Member1ID != nulluserid {
+					if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member1ID); err != nil && err != sql.ErrNoRows {
 						return []TaskAbstract{}, err
 					}
-					if score_for_subtask < leaderscore {
-						score_for_subtask = leaderscore
+
+					for _, subtask_score := range subtask_scores {
+						scores_of_subtask[subtask_score.SubtaskID] = max(scores_of_subtask[subtask_score.SubtaskID], subtask_score.Score)
 					}
-					if team.Member1ID != nulluserid {
-						member1score := 0
-						if err := tx.GetContext(ctx, &member1score, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.Member1ID); err != nil {
-							return []TaskAbstract{}, err
-						}
-						if score_for_subtask < member1score {
-							score_for_subtask = member1score
-						}
+				}
+
+				if team.Member2ID != nulluserid {
+					if err := tx.SelectContext(c.Request().Context(), &subtask_scores, "SELECT subtask_id, score FROM subtask_scores_of_user WHERE user_id = ?", team.Member2ID); err != nil && err != sql.ErrNoRows {
+						return []TaskAbstract{}, err
 					}
-					if team.Member2ID != nulluserid {
-						member2score := 0
-						if err := tx.GetContext(ctx, &member2score, "SELECT COALESCE(MAX(score),0) FROM answers WHERE subtask_id = ? AND EXISTS (SELECT * FROM submissions WHERE task_id = ? AND user_id = ? AND submissions.answer = answers.answer)", subtask.ID, task.ID, team.Member2ID); err != nil {
-							return []TaskAbstract{}, err
-						}
-						if score_for_subtask < member2score {
-							score_for_subtask = member2score
-						}
+
+					for _, subtask_score := range subtask_scores {
+						scores_of_subtask[subtask_score.SubtaskID] = max(scores_of_subtask[subtask_score.SubtaskID], subtask_score.Score)
 					}
+				}
+
+				for _, subtask := range subtasks {
+					score_for_subtask := scores_of_subtask[subtask.ID]
 					score += score_for_subtask
 				}
 			} else if err != sql.ErrNoRows {
